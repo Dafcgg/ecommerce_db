@@ -4,10 +4,6 @@ Sistema de base de datos relacional completo para una plataforma de comercio ele
 
 Todo el código fue probado de extremo a extremo en una instancia MySQL 8.0 real, ejecutando los 7 archivos en orden secuencial sin errores.
 
-## Integrantes
-
-- Dilan — Arquitectura de base de datos, desarrollo backend
-- (Agregar aquí los demás integrantes del equipo)
 
 ## Estructura del proyecto
 
