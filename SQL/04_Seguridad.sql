@@ -110,7 +110,7 @@ GRANT SELECT ON ecommerce_db.productos TO 'Auditor_Financiero';
 GRANT SELECT ON ecommerce_db.log_cambios_precio TO 'Auditor_Financiero';
 GRANT SELECT ON ecommerce_db.log_permisos TO 'Auditor_Financiero';
 GRANT SELECT ON ecommerce_db.logins_fallidos TO 'Auditor_Financiero';
-GRANT SELECT ON ecommerce_db.Auditoria_Clientes TO 'Auditor_Financiero';
+-- NOTA: El permiso para Auditoria_Clientes ha sido movido al script 08
 GRANT SELECT ON ecommerce_db.ventas_archivadas TO 'Auditor_Financiero';
 
 -- 7. Rol Visitante: Acceso exclusivo a catálogo público

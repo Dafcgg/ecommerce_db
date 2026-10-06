@@ -54,3 +54,9 @@ BEGIN
 END //
 
 DELIMITER ;
+
+-- -----------------------------------------------------------------------------
+-- ASIGNACIÓN DE PERMISOS
+-- Se otorga acceso de lectura al Auditor después de crear la tabla.
+-- -----------------------------------------------------------------------------
+GRANT SELECT ON ecommerce_db.Auditoria_Clientes TO 'Auditor_Financiero';
