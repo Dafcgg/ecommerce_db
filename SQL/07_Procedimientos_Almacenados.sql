@@ -382,9 +382,17 @@ CREATE PROCEDURE sp_CambiarEstadoPedido(
     IN p_nuevo_estado VARCHAR(30)
 )
 BEGIN
+    DECLARE v_existe INT;
+
     IF p_nuevo_estado NOT IN ('Pendiente de Pago','Procesando','Enviado','Entregado','Cancelado') THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Estado no valido para la orden de compra';
+    END IF;
+
+    SELECT COUNT(*) INTO v_existe FROM ventas WHERE id_venta = p_id_venta;
+    IF v_existe = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La orden especificada no existe';
     END IF;
 
     UPDATE ventas

@@ -52,7 +52,7 @@ CREATE TABLE productos (
     CONSTRAINT chk_total_vendido_no_negativo CHECK (total_vendido >= 0),
     CONSTRAINT chk_total_vistas_no_negativo CHECK (total_vistas >= 0),
     CONSTRAINT fk_producto_categoria FOREIGN KEY (id_categoria) 
-        REFERENCES categorias(id_categoria) ON DELETE SET NULL ON UPDATE CASCADE,
+        REFERENCES categorias(id_categoria) ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT fk_producto_proveedor FOREIGN KEY (id_proveedor) 
         REFERENCES proveedores(id_proveedor) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
@@ -79,7 +79,6 @@ CREATE TABLE clientes (
         REFERENCES clientes(id_cliente) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
--- ON DELETE RESTRICT en id_cliente preserva trazabilidad fiscal y contable de pedidos
 CREATE TABLE ventas (
     id_venta INT AUTO_INCREMENT PRIMARY KEY,
     id_cliente INT NOT NULL,
@@ -196,19 +195,6 @@ CREATE TABLE log_cambios_precio (
     fecha_cambio DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     usuario_bd VARCHAR(100)
 ) ENGINE=InnoDB;
-
-CREATE TABLE IF NOT EXISTS Auditoria_Clientes (
-    id_auditoria       BIGINT       NOT NULL AUTO_INCREMENT,
-    id_cliente         INT          NOT NULL,
-    campo_modificado   VARCHAR(50)  NOT NULL,
-    valor_antiguo      VARCHAR(255) NULL,
-    valor_nuevo        VARCHAR(255) NULL,
-    fecha_modificacion DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id_auditoria),
-    INDEX idx_auditoria_cliente_fecha (id_cliente, fecha_modificacion),
-    CONSTRAINT fk_auditoria_cliente FOREIGN KEY (id_cliente) 
-        REFERENCES clientes(id_cliente) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ventas_archivadas (
     id_venta INT NOT NULL,

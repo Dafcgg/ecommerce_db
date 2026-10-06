@@ -230,7 +230,7 @@ CREATE EVENT evt_backup_critical_tables_daily
 ON SCHEDULE EVERY 1 DAY STARTS TIMESTAMP(CURRENT_DATE + INTERVAL 1 DAY, '00:30:00')
 DO
 BEGIN
-    INSERT INTO respaldo_productos (id_producto, nombre, precio, stock)
+    INSERT IGNORE INTO respaldo_productos (id_producto, nombre, precio, stock)
     SELECT id_producto, nombre, precio, stock FROM productos;
 END //
 

@@ -156,8 +156,16 @@ CREATE TRIGGER trg_capitalize_nombre_cliente
 BEFORE INSERT ON clientes
 FOR EACH ROW
 BEGIN
-    SET NEW.nombre = fn_FormatearNombreCompleto(NEW.nombre, '');
-    SET NEW.apellido = fn_FormatearNombreCompleto('', NEW.apellido);
+    DECLARE v_nom VARCHAR(100);
+    DECLARE v_ape VARCHAR(100);
+    SET v_nom = TRIM(COALESCE(NEW.nombre, ''));
+    SET v_ape = TRIM(COALESCE(NEW.apellido, ''));
+    IF LENGTH(v_nom) > 0 THEN
+        SET NEW.nombre = CONCAT(UPPER(LEFT(v_nom, 1)), LOWER(SUBSTRING(v_nom, 2)));
+    END IF;
+    IF LENGTH(v_ape) > 0 THEN
+        SET NEW.apellido = CONCAT(UPPER(LEFT(v_ape, 1)), LOWER(SUBSTRING(v_ape, 2)));
+    END IF;
 END //
 
 -- -----------------------------------------------------------------------------
