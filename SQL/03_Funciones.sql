@@ -391,10 +391,12 @@ BEGIN
     IF p_contrasena IS NULL OR LENGTH(p_contrasena) < 8 THEN
         RETURN 0;
     END IF;
-    IF p_contrasena REGEXP '[A-Z]'
-       AND p_contrasena REGEXP '[a-z]'
-       AND p_contrasena REGEXP '[0-9]'
-       AND p_contrasena REGEXP '[^A-Za-z0-9]' THEN
+    -- REGEXP_LIKE con 'c' (case-sensitive): con una colacion *_ci, REGEXP a secas
+    -- ignora mayusculas/minusculas y '[A-Z]' aceptaria tambien letras minusculas.
+    IF REGEXP_LIKE(p_contrasena, '[A-Z]', 'c')
+       AND REGEXP_LIKE(p_contrasena, '[a-z]', 'c')
+       AND REGEXP_LIKE(p_contrasena, '[0-9]', 'c')
+       AND REGEXP_LIKE(p_contrasena, '[^A-Za-z0-9]', 'c') THEN
         RETURN 1;
     ELSE
         RETURN 0;

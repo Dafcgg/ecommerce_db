@@ -101,9 +101,25 @@ CREATE TABLE detalle_ventas (
     precio_unitario_congelado DECIMAL(10,2) NOT NULL,
     CONSTRAINT chk_cantidad_positiva CHECK (cantidad > 0),
     CONSTRAINT chk_precio_unitario_positivo CHECK (precio_unitario_congelado >= 0),
+    CONSTRAINT uq_detalle_venta_producto UNIQUE (id_venta, id_producto),
     CONSTRAINT fk_detalle_venta FOREIGN KEY (id_venta) 
         REFERENCES ventas(id_venta) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT fk_detalle_producto FOREIGN KEY (id_producto) 
+        REFERENCES productos(id_producto) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Registro de devoluciones: evita devolver dos veces la misma mercancia y
+-- permite saber cuanto queda por devolver de cada renglon de la orden.
+CREATE TABLE devoluciones (
+    id_devolucion INT AUTO_INCREMENT PRIMARY KEY,
+    id_venta INT NOT NULL,
+    id_producto INT NOT NULL,
+    cantidad INT NOT NULL,
+    fecha_devolucion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_devolucion_cantidad_positiva CHECK (cantidad > 0),
+    CONSTRAINT fk_devolucion_venta FOREIGN KEY (id_venta)
+        REFERENCES ventas(id_venta) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_devolucion_producto FOREIGN KEY (id_producto)
         REFERENCES productos(id_producto) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
@@ -214,6 +230,7 @@ CREATE INDEX idx_ventas_fecha ON ventas(fecha_venta);
 CREATE INDEX idx_ventas_estado ON ventas(estado);
 CREATE INDEX idx_detalle_venta ON detalle_ventas(id_venta);
 CREATE INDEX idx_detalle_producto ON detalle_ventas(id_producto);
+CREATE INDEX idx_devoluciones_venta_producto ON devoluciones(id_venta, id_producto);
 CREATE INDEX idx_carritos_cliente ON carritos(id_cliente);
 CREATE INDEX idx_carritos_estado_fecha ON carritos(estado, fecha_actualizacion);
 CREATE INDEX idx_vistas_producto ON vistas_productos(id_producto);

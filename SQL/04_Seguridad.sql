@@ -69,7 +69,11 @@ GRANT ALL PRIVILEGES ON ecommerce_db.* TO 'Administrador_Sistema';
 -- 2. Rol Gerente de Marketing: Analítica de clientes, ventas, promociones y carritos
 GRANT SELECT ON ecommerce_db.ventas TO 'Gerente_Marketing';
 GRANT SELECT ON ecommerce_db.detalle_ventas TO 'Gerente_Marketing';
-GRANT SELECT ON ecommerce_db.clientes TO 'Gerente_Marketing';
+-- Sin contrasena_hash ni direccion_envio (datos que este rol no necesita)
+GRANT SELECT (id_cliente, nombre, apellido, email, ciudad, pais, fecha_nacimiento,
+              fecha_registro, fecha_ultima_compra, total_gastado, nivel_lealtad,
+              referido_por, activo)
+    ON ecommerce_db.clientes TO 'Gerente_Marketing';
 GRANT SELECT ON ecommerce_db.vistas_productos TO 'Gerente_Marketing';
 GRANT SELECT ON ecommerce_db.resenas_productos TO 'Gerente_Marketing';
 GRANT SELECT ON ecommerce_db.carritos TO 'Gerente_Marketing';
@@ -81,7 +85,11 @@ GRANT EXECUTE ON ecommerce_db.* TO 'Gerente_Marketing';
 GRANT SELECT ON ecommerce_db.productos TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.categorias TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.proveedores TO 'Analista_Datos';
-GRANT SELECT ON ecommerce_db.clientes TO 'Analista_Datos';
+-- Sin contrasena_hash ni direccion_envio
+GRANT SELECT (id_cliente, nombre, apellido, email, ciudad, pais, fecha_nacimiento,
+              fecha_registro, fecha_ultima_compra, total_gastado, nivel_lealtad,
+              referido_por, activo)
+    ON ecommerce_db.clientes TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.ventas TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.detalle_ventas TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.promociones TO 'Analista_Datos';
@@ -90,6 +98,7 @@ GRANT SELECT ON ecommerce_db.resenas_productos TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.carritos TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.carrito_items TO 'Analista_Datos';
 GRANT SELECT ON ecommerce_db.log_cambios_precio TO 'Analista_Datos';
+GRANT SELECT ON ecommerce_db.devoluciones TO 'Analista_Datos';
 
 -- 4. Rol Empleado de Inventario: Gestión y ajuste de stock
 GRANT SELECT, UPDATE (stock) ON ecommerce_db.productos TO 'Empleado_Inventario';
@@ -112,6 +121,7 @@ GRANT SELECT ON ecommerce_db.log_permisos TO 'Auditor_Financiero';
 GRANT SELECT ON ecommerce_db.logins_fallidos TO 'Auditor_Financiero';
 -- NOTA: El permiso para Auditoria_Clientes ha sido movido al script 08
 GRANT SELECT ON ecommerce_db.ventas_archivadas TO 'Auditor_Financiero';
+GRANT SELECT ON ecommerce_db.devoluciones TO 'Auditor_Financiero';
 
 -- 7. Rol Visitante: Acceso exclusivo a catálogo público
 GRANT SELECT ON ecommerce_db.v_catalogo_publico TO 'Visitante';
@@ -171,6 +181,9 @@ SET DEFAULT ROLE 'Visitante' TO 'visitor_user'@'%';
 -- -----------------------------------------------------------------------------
 -- SECCIÓN 6: ENDURECIMIENTO DE SEGURIDAD (Hardening)
 -- -----------------------------------------------------------------------------
-DROP USER IF EXISTS 'root'@'%';
+-- IMPORTANTE: este paso se deja COMENTADO a proposito. Si te conectas como
+-- root@'%' (p. ej. MySQL en Docker o por TCP), al eliminarlo los scripts 05 a 08
+-- fallarian con "Access denied". Ejecutalo manualmente DESPUES del script 08:
+-- DROP USER IF EXISTS 'root'@'%';
 
 FLUSH PRIVILEGES;

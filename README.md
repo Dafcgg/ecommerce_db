@@ -34,7 +34,8 @@ El diseño de datos separa los flujos transaccionales centrales de los mecanismo
 - **`categorias`**: Estructura de clasificación jerárquica de artículos con contadores desnormalizados de productos activos.
 - **`proveedores`**: Directorio de fabricantes y distribuidores de mercancía con canales de contacto.
 - **`ventas`**: Encabezado de órdenes de compra con control de estado (`Pendiente de Pago`, `Procesando`, `Enviado`, `Entregado`, `Cancelado`), marca de tiempo y monto total consolidado.
-- **`detalle_ventas`**: Renglones específicos de cada orden, registrando la cantidad adquirida y congelando el precio unitario pactado al momento de la venta.
+- **`detalle_ventas`**: Renglones específicos de cada orden (un producto por orden, `UNIQUE (id_venta, id_producto)`), registrando la cantidad adquirida y congelando el precio unitario pactado al momento de la venta.
+- **`devoluciones`**: Registro de mercancía devuelta por orden y producto; impide devolver más unidades de las compradas y permite cancelar la orden solo cuando se devolvió todo.
 
 ### Entidades de Soporte y Auditoría
 - **`Auditoria_Clientes`**: Bitácora inmutable de modificaciones en campos sensibles de clientes (`email`, `direccion_envio`), registrando valores previos, valores nuevos y estampas de tiempo.
@@ -50,7 +51,7 @@ El diseño de datos separa los flujos transaccionales centrales de los mecanismo
 - **Tablas analíticas de eventos**: `reporte_ventas_semanales`, `reorden_sugerida`, `kpi_mensual`, `tamano_bd_log`, `alertas_fraude`, `respaldo_productos`, `ranking_productos`, `agregados_ventas_diarias` y `reporte_proveedores_mensual`.
 
 ### Relaciones Cardinales de Integridad
-- **Categorías 1:N Productos**: Llave foránea `fk_producto_categoria` (`ON DELETE SET NULL ON UPDATE CASCADE`).
+- **Categorías 1:N Productos**: Llave foránea `fk_producto_categoria` (`ON DELETE RESTRICT ON UPDATE CASCADE`), reforzada por el trigger `trg_prevent_delete_categoria_with_products`.
 - **Proveedores 1:N Productos**: Llave foránea `fk_producto_proveedor` (`ON DELETE SET NULL ON UPDATE CASCADE`).
 - **Clientes 1:N Ventas**: Llave foránea `fk_venta_cliente` (`ON DELETE RESTRICT ON UPDATE CASCADE`), preservando la trazabilidad fiscal y contable obligatoria de pedidos históricos.
 - **Ventas 1:N Detalle de Ventas**: Llave foránea `fk_detalle_venta` (`ON DELETE CASCADE ON UPDATE CASCADE`).
@@ -67,10 +68,10 @@ El diseño de datos separa los flujos transaccionales centrales de los mecanismo
 
 | Archivo | Componentes y Propósito |
 | :--- | :--- |
-| `01_Esquema_y_Datos.sql` | Inicialización DDL del esquema `ecommerce_db`, definición de 17 tablas con restricciones de dominio (`CHECK`), claves primarias, claves foráneas, 12 índices de cobertura y carga de datos semilla balanceados y consistentes. |
+| `01_Esquema_y_Datos.sql` | Inicialización DDL del esquema `ecommerce_db`, definición de 17 tablas con restricciones de dominio (`CHECK`), claves primarias, claves foráneas, 13 índices de cobertura y carga de datos semilla balanceados y consistentes. |
 | `02_Consultas_Avanzadas.sql` | 20 consultas analíticas de alta eficiencia para toma de decisiones (Top ingresos, productos de baja rotación, Customer Lifetime Value [CLV], cohortes de retención, segmentación RFM, horas pico y afinidad de canasta) optimizadas para evitar productos cartesianos (fan-out) y compatibles con `ONLY_FULL_GROUP_BY`. |
 | `03_Funciones.sql` | 20 funciones almacenadas definidas por el usuario (UDF) con determinismo explícito (`DETERMINISTIC` vs `NOT DETERMINISTIC`) y manejo seguro de nulos (`NULL-safety`) para cálculos de flete, lealtad, SKU, descuentos, validación de credenciales y edad. |
-| `04_Seguridad.sql` | Esquema de seguridad basado en roles (RBAC) con 7 roles operativos, 7 usuarios con límites de consultas por hora y expiración de contraseñas cada 90 días, 3 vistas de seguridad con enmascaramiento de datos (data masking) y revocación preventiva de accesos remotos no seguros (`root`). |
+| `04_Seguridad.sql` | Esquema de seguridad basado en roles (RBAC) con 7 roles operativos, 7 usuarios con límites de consultas por hora y expiración de contraseñas cada 90 días, 3 vistas de seguridad con enmascaramiento de datos (data masking) y, como paso final opcional, la revocación de accesos remotos no seguros (`DROP USER 'root'@'%'`, comentado por defecto). Los roles de analítica y marketing leen `clientes` por columnas, sin `contrasena_hash` ni `direccion_envio`. |
 | `05_Triggers.sql` | 21 disparadores para gobierno de datos e integridad operativa: control y validación de inventario físico en dos fases (`BEFORE` y `AFTER`), recálculo automático de importes de órdenes, alertas de stock bajo y actualización del acumulador de gasto y rango de lealtad en entregas o cancelaciones. |
 | `06_Eventos.sql` | 9 tablas auxiliares y 20 eventos programados automáticos (`MySQL Event Scheduler`) para agregación diaria de facturación, depuración de carritos abandonados, actualización nocturna de estadísticas de productos y categorías, respaldo de catálogo y generación mensual de KPIs. |
 | `07_Procedimientos_Almacenados.sql` | 20 procedimientos almacenados transaccionales que encapsulan la lógica operativa del e-commerce bajo control ACID (manejo de excepciones con `EXIT HANDLER`, `ROLLBACK` y `SIGNAL SQLSTATE '45000'`) para compras completas, devoluciones, pagos, auditoría de stock y fusión de cuentas. |
@@ -110,6 +111,15 @@ SOURCE SQL/05_Triggers.sql;
 SOURCE SQL/06_Eventos.sql;
 SOURCE SQL/07_Procedimientos_Almacenados.sql;
 SOURCE SQL/08_Auditoria_Clientes.sql;
+```
+
+### Paso final opcional: endurecimiento de `root`
+
+`04_Seguridad.sql` deja **comentada** la instrucción `DROP USER IF EXISTS 'root'@'%';` porque, si te conectas como `root@'%'` (por ejemplo MySQL en Docker o por TCP), eliminarla antes de ejecutar los scripts 05 a 08 haría que estos fallaran con *Access denied*. Una vez ejecutados los 8 archivos, puedes correrla manualmente:
+
+```sql
+DROP USER IF EXISTS 'root'@'%';
+FLUSH PRIVILEGES;
 ```
 
 ---

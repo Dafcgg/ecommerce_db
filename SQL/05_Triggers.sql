@@ -20,7 +20,7 @@ FOR EACH ROW
 BEGIN
     IF OLD.precio <> NEW.precio THEN
         INSERT INTO log_cambios_precio (id_producto, precio_anterior, precio_nuevo, usuario_bd)
-        VALUES (NEW.id_producto, OLD.precio, NEW.precio, CURRENT_USER());
+        VALUES (NEW.id_producto, OLD.precio, NEW.precio, USER());
     END IF;
 END //
 
@@ -83,7 +83,7 @@ AFTER INSERT ON clientes
 FOR EACH ROW
 BEGIN
     INSERT INTO log_permisos (usuario_bd, accion)
-    VALUES (CURRENT_USER(), CONCAT('Nuevo cliente registrado: id ', NEW.id_cliente, ' email ', NEW.email));
+    VALUES (USER(), CONCAT('Nuevo cliente registrado: id ', NEW.id_cliente, ' email ', NEW.email));
 END //
 
 -- -----------------------------------------------------------------------------
@@ -104,7 +104,7 @@ BEGIN
 
         UPDATE clientes
         SET total_gastado = v_nuevo_total,
-            fecha_ultima_compra = NEW.fecha_venta,
+            fecha_ultima_compra = GREATEST(COALESCE(fecha_ultima_compra, NEW.fecha_venta), NEW.fecha_venta),
             nivel_lealtad = fn_DeterminarEstadoLealtad(v_nuevo_total)
         WHERE id_cliente = NEW.id_cliente;
 
@@ -129,7 +129,18 @@ CREATE TRIGGER trg_set_fecha_modificacion_producto
 BEFORE UPDATE ON productos
 FOR EACH ROW
 BEGIN
-    SET NEW.fecha_modificacion = NOW();
+    -- Solo cambios de catalogo: las ventas, vistas o ajustes de stock no deben
+    -- "renovar" la fecha (si no, evt_purge_soft_deleted_records_weekly nunca purga).
+    IF NOT (OLD.nombre <=> NEW.nombre
+        AND OLD.descripcion <=> NEW.descripcion
+        AND OLD.precio <=> NEW.precio
+        AND OLD.costo <=> NEW.costo
+        AND OLD.sku <=> NEW.sku
+        AND OLD.activo <=> NEW.activo
+        AND OLD.id_categoria <=> NEW.id_categoria
+        AND OLD.id_proveedor <=> NEW.id_proveedor) THEN
+        SET NEW.fecha_modificacion = NOW();
+    END IF;
 END //
 
 -- -----------------------------------------------------------------------------
@@ -207,7 +218,7 @@ FOR EACH ROW
 BEGIN
     IF OLD.estado <> NEW.estado THEN
         INSERT INTO log_permisos (usuario_bd, accion)
-        VALUES (CURRENT_USER(), CONCAT('Venta ', NEW.id_venta, ' cambio de estado de ', OLD.estado, ' a ', NEW.estado));
+        VALUES (USER(), CONCAT('Venta ', NEW.id_venta, ' cambio de estado de ', OLD.estado, ' a ', NEW.estado));
     END IF;
 END //
 
@@ -279,7 +290,7 @@ AFTER INSERT ON ventas
 FOR EACH ROW
 BEGIN
     UPDATE clientes
-    SET fecha_ultima_compra = NEW.fecha_venta
+    SET fecha_ultima_compra = GREATEST(COALESCE(fecha_ultima_compra, NEW.fecha_venta), NEW.fecha_venta)
     WHERE id_cliente = NEW.id_cliente;
 END //
 

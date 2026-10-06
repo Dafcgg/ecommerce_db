@@ -191,7 +191,7 @@ FROM carritos ca
 JOIN clientes c ON c.id_cliente = ca.id_cliente
 JOIN carrito_items ci ON ci.id_carrito = ca.id_carrito
 JOIN productos p ON p.id_producto = ci.id_producto
-WHERE ca.estado = 'Activo' 
+WHERE ca.estado IN ('Activo', 'Abandonado')
   AND ca.fecha_actualizacion < (NOW() - INTERVAL 3 DAY)
 GROUP BY ca.id_carrito, ca.id_cliente, c.nombre, c.apellido, c.email, ca.fecha_actualizacion
 ORDER BY ca.fecha_actualizacion ASC;
@@ -371,8 +371,10 @@ SELECT
         2
     ) AS demanda_mensual_estimada
 FROM productos p
-LEFT JOIN detalle_ventas dv ON dv.id_producto = p.id_producto
-LEFT JOIN ventas v ON v.id_venta = dv.id_venta AND v.estado <> 'Cancelado'
+LEFT JOIN (
+    detalle_ventas dv
+    JOIN ventas v ON v.id_venta = dv.id_venta AND v.estado <> 'Cancelado'
+) ON dv.id_producto = p.id_producto
 WHERE p.activo = 1
 GROUP BY p.id_producto, p.nombre, p.stock
 ORDER BY demanda_mensual_estimada DESC;

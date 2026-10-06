@@ -112,7 +112,7 @@ BEGIN
     SET p_id_producto_generado = LAST_INSERT_ID();
 
     UPDATE productos
-    SET sku = fn_GenerarSKU(p_id_categoria, p_id_producto_generado)
+    SET sku = fn_GenerarSKU(id_categoria, id_producto)
     WHERE id_producto = p_id_producto_generado;
 
     COMMIT;
@@ -156,6 +156,9 @@ CREATE PROCEDURE sp_ProcesarDevolucion(
 )
 BEGIN
     DECLARE v_cantidad_comprada INT;
+    DECLARE v_cantidad_devuelta INT;
+    DECLARE v_total_comprado INT;
+    DECLARE v_total_devuelto INT;
     DECLARE v_estado_venta VARCHAR(30);
 
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
@@ -164,15 +167,21 @@ BEGIN
         RESIGNAL;
     END;
 
-    IF p_cantidad <= 0 THEN
+    IF p_cantidad IS NULL OR p_cantidad <= 0 THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'La cantidad a devolver debe ser mayor a cero';
     END IF;
 
-    SELECT estado INTO v_estado_venta FROM ventas WHERE id_venta = p_id_venta;
+    START TRANSACTION;
+
+    -- Se bloquea la orden para que dos devoluciones simultaneas no se pisen
+    SELECT estado INTO v_estado_venta FROM ventas WHERE id_venta = p_id_venta FOR UPDATE;
     IF v_estado_venta IS NULL THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'La orden de venta especificada no existe';
+    ELSEIF v_estado_venta <> 'Entregado' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Solo se pueden devolver productos de ordenes en estado Entregado';
     END IF;
 
     SELECT cantidad INTO v_cantidad_comprada
@@ -182,19 +191,30 @@ BEGIN
     IF v_cantidad_comprada IS NULL THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'El producto no pertenece a la orden especificada';
-    ELSEIF p_cantidad > v_cantidad_comprada THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'La cantidad devuelta supera la cantidad comprada en la orden';
     END IF;
 
-    START TRANSACTION;
+    SELECT COALESCE(SUM(cantidad), 0) INTO v_cantidad_devuelta
+    FROM devoluciones
+    WHERE id_venta = p_id_venta AND id_producto = p_id_producto;
+
+    IF p_cantidad > (v_cantidad_comprada - v_cantidad_devuelta) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La cantidad devuelta supera la cantidad pendiente de devolver en la orden';
+    END IF;
+
+    INSERT INTO devoluciones (id_venta, id_producto, cantidad)
+    VALUES (p_id_venta, p_id_producto, p_cantidad);
 
     UPDATE productos
     SET stock = stock + p_cantidad,
         total_vendido = GREATEST(0, total_vendido - p_cantidad)
     WHERE id_producto = p_id_producto;
 
-    IF p_cantidad = v_cantidad_comprada THEN
+    -- La orden solo se cancela cuando TODA la mercancia ya fue devuelta
+    SELECT COALESCE(SUM(cantidad), 0) INTO v_total_comprado FROM detalle_ventas WHERE id_venta = p_id_venta;
+    SELECT COALESCE(SUM(cantidad), 0) INTO v_total_devuelto FROM devoluciones WHERE id_venta = p_id_venta;
+
+    IF v_total_devuelto >= v_total_comprado THEN
         UPDATE ventas
         SET estado = 'Cancelado'
         WHERE id_venta = p_id_venta;
@@ -247,7 +267,15 @@ BEGIN
         RESIGNAL;
     END;
 
-    SELECT stock INTO v_stock_actual FROM productos WHERE id_producto = p_id_producto;
+    IF p_cantidad_ajuste IS NULL OR p_cantidad_ajuste = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El ajuste de inventario debe ser distinto de cero';
+    END IF;
+
+    START TRANSACTION;
+
+    -- FOR UPDATE: la lectura y la escritura del stock son una sola operacion atomica
+    SELECT stock INTO v_stock_actual FROM productos WHERE id_producto = p_id_producto FOR UPDATE;
     IF v_stock_actual IS NULL THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'El producto a ajustar no existe';
@@ -258,15 +286,13 @@ BEGIN
         SET MESSAGE_TEXT = 'El ajuste solicitado resulta en un stock negativo';
     END IF;
 
-    START TRANSACTION;
-
     UPDATE productos
     SET stock = stock + p_cantidad_ajuste
     WHERE id_producto = p_id_producto;
 
     INSERT INTO log_permisos (usuario_bd, accion)
     VALUES (
-        CURRENT_USER(), 
+        USER(), 
         CONCAT('Ajuste de inventario producto id ', p_id_producto, ': ', p_cantidad_ajuste, ' unidades. Motivo: ', p_motivo)
     );
 
@@ -282,12 +308,19 @@ CREATE PROCEDURE sp_EliminarClienteDeFormaSegura(
     IN p_id_cliente INT
 )
 BEGIN
+    DECLARE v_existe INT;
     DECLARE v_total_ventas INT;
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
         RESIGNAL;
     END;
+
+    SELECT COUNT(*) INTO v_existe FROM clientes WHERE id_cliente = p_id_cliente;
+    IF v_existe = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El cliente especificado no existe';
+    END IF;
 
     SELECT COUNT(*) INTO v_total_ventas
     FROM ventas
@@ -296,21 +329,24 @@ BEGIN
     START TRANSACTION;
 
     IF v_total_ventas > 0 THEN
+        -- Anonimizacion real: tambien se limpian el correo y la fecha de nacimiento
         UPDATE clientes 
         SET activo = 0,
             nombre = 'CLIENTE',
             apellido = 'ANONIMIZADO',
+            email = CONCAT('anonimo_', p_id_cliente, '@eliminado.invalid'),
             direccion_envio = 'DIRECCION_ELIMINADA',
+            fecha_nacimiento = NULL,
             contrasena_hash = '[CUENTA_CERRADA]'
         WHERE id_cliente = p_id_cliente;
 
         INSERT INTO log_permisos (usuario_bd, accion)
-        VALUES (CURRENT_USER(), CONCAT('Cliente id ', p_id_cliente, ' desactivado y anonimizado por presencia de historial transaccional'));
+        VALUES (USER(), CONCAT('Cliente id ', p_id_cliente, ' desactivado y anonimizado por presencia de historial transaccional'));
     ELSE
         DELETE FROM clientes WHERE id_cliente = p_id_cliente;
 
         INSERT INTO log_permisos (usuario_bd, accion)
-        VALUES (CURRENT_USER(), CONCAT('Cliente id ', p_id_cliente, ' eliminado fisicamente (sin ventas asociadas)'));
+        VALUES (USER(), CONCAT('Cliente id ', p_id_cliente, ' eliminado fisicamente (sin ventas asociadas)'));
     END IF;
 
     COMMIT;
@@ -382,22 +418,52 @@ CREATE PROCEDURE sp_CambiarEstadoPedido(
     IN p_nuevo_estado VARCHAR(30)
 )
 BEGIN
-    DECLARE v_existe INT;
+    DECLARE v_estado_actual VARCHAR(30);
 
-    IF p_nuevo_estado NOT IN ('Pendiente de Pago','Procesando','Enviado','Entregado','Cancelado') THEN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    IF p_nuevo_estado IS NULL
+       OR p_nuevo_estado NOT IN ('Pendiente de Pago','Procesando','Enviado','Entregado','Cancelado') THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Estado no valido para la orden de compra';
     END IF;
 
-    SELECT COUNT(*) INTO v_existe FROM ventas WHERE id_venta = p_id_venta;
-    IF v_existe = 0 THEN
+    START TRANSACTION;
+
+    SELECT estado INTO v_estado_actual FROM ventas WHERE id_venta = p_id_venta FOR UPDATE;
+    IF v_estado_actual IS NULL THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'La orden especificada no existe';
+    END IF;
+
+    -- Flujo permitido: Pendiente de Pago -> Procesando -> Enviado -> Entregado
+    -- (se puede cancelar mientras no este Entregada; una orden Entregada solo se revierte por devolucion)
+    IF NOT (
+           (v_estado_actual = 'Pendiente de Pago' AND p_nuevo_estado IN ('Procesando', 'Cancelado'))
+        OR (v_estado_actual = 'Procesando'        AND p_nuevo_estado IN ('Enviado', 'Cancelado'))
+        OR (v_estado_actual = 'Enviado'           AND p_nuevo_estado IN ('Entregado', 'Cancelado'))
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Transicion de estado no permitida (una orden Entregada solo se revierte con sp_ProcesarDevolucion)';
+    END IF;
+
+    -- Al cancelar una orden que aun no fue entregada, la mercancia vuelve al inventario
+    IF p_nuevo_estado = 'Cancelado' THEN
+        UPDATE productos p
+        JOIN detalle_ventas dv ON dv.id_producto = p.id_producto AND dv.id_venta = p_id_venta
+        SET p.stock = p.stock + dv.cantidad,
+            p.total_vendido = GREATEST(0, p.total_vendido - dv.cantidad);
     END IF;
 
     UPDATE ventas
     SET estado = p_nuevo_estado
     WHERE id_venta = p_id_venta;
+
+    COMMIT;
 END //
 
 -- -----------------------------------------------------------------------------
@@ -474,7 +540,9 @@ CREATE PROCEDURE sp_FusionarCuentasCliente(
     IN p_id_cliente_secundario INT
 )
 BEGIN
+    DECLARE v_gasto_principal DECIMAL(12,2);
     DECLARE v_gasto_secundario DECIMAL(12,2);
+    DECLARE v_gasto_total DECIMAL(12,2);
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -486,16 +554,27 @@ BEGIN
         SET MESSAGE_TEXT = 'No es posible fusionar un cliente consigo mismo';
     END IF;
 
+    START TRANSACTION;
+
+    SELECT total_gastado INTO v_gasto_principal 
+    FROM clientes 
+    WHERE id_cliente = p_id_cliente_principal FOR UPDATE;
+
+    IF v_gasto_principal IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La cuenta principal no existe';
+    END IF;
+
     SELECT total_gastado INTO v_gasto_secundario 
     FROM clientes 
-    WHERE id_cliente = p_id_cliente_secundario;
+    WHERE id_cliente = p_id_cliente_secundario FOR UPDATE;
 
     IF v_gasto_secundario IS NULL THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'La cuenta secundaria no existe';
     END IF;
 
-    START TRANSACTION;
+    SET v_gasto_total = v_gasto_principal + v_gasto_secundario;
 
     UPDATE ventas
     SET id_cliente = p_id_cliente_principal
@@ -513,13 +592,22 @@ BEGIN
     SET id_cliente = p_id_cliente_principal
     WHERE id_cliente = p_id_cliente_secundario;
 
+    -- Si el principal habia sido referido por el secundario, se limpia antes para
+    -- que no quede autoreferido (trg_prevent_self_referral lo bloquearia)
+    UPDATE clientes
+    SET referido_por = NULL
+    WHERE id_cliente = p_id_cliente_principal
+      AND referido_por = p_id_cliente_secundario;
+
     UPDATE clientes
     SET referido_por = p_id_cliente_principal
     WHERE referido_por = p_id_cliente_secundario;
 
+    -- Ambos valores se calculan desde variables: en un UPDATE de MySQL las asignaciones
+    -- se evalúan de izquierda a derecha, y usar total_gastado en la 2ª sumaria dos veces.
     UPDATE clientes
-    SET total_gastado = total_gastado + v_gasto_secundario,
-        nivel_lealtad = fn_DeterminarEstadoLealtad(total_gastado + v_gasto_secundario)
+    SET total_gastado = v_gasto_total,
+        nivel_lealtad = fn_DeterminarEstadoLealtad(v_gasto_total)
     WHERE id_cliente = p_id_cliente_principal;
 
     DELETE FROM clientes WHERE id_cliente = p_id_cliente_secundario;

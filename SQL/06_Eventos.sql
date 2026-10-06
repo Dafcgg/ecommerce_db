@@ -270,7 +270,12 @@ BEGIN
 
     UPDATE productos p
     SET total_vendido = COALESCE((
-            SELECT SUM(dv.cantidad) 
+            -- unidades vendidas netas: se descuentan las devoluciones parciales
+            SELECT SUM(dv.cantidad - COALESCE((
+                       SELECT SUM(d.cantidad) 
+                       FROM devoluciones d 
+                       WHERE d.id_venta = dv.id_venta AND d.id_producto = dv.id_producto
+                   ), 0))
             FROM detalle_ventas dv 
             JOIN ventas v ON v.id_venta = dv.id_venta 
             WHERE dv.id_producto = p.id_producto AND v.estado <> 'Cancelado'
@@ -294,7 +299,7 @@ BEGIN
     WHERE table_schema = 'ecommerce_db';
 END //
 
--- EVENTO 18: Detección horaria de patrones sospechosos de compras (> 5 pedidos/hora)
+-- EVENTO 18: Detección horaria de patrones sospechosos de compras (5 o más pedidos/hora)
 DROP EVENT IF EXISTS evt_detect_fraudulent_activity_hourly //
 CREATE EVENT evt_detect_fraudulent_activity_hourly
 ON SCHEDULE EVERY 1 HOUR STARTS CURRENT_TIMESTAMP
@@ -338,7 +343,7 @@ DO
 BEGIN
     DELETE FROM productos
     WHERE activo = 0 
-      AND fecha_modificacion < (NOW() - INTERVAL 6 MONTH)
+      AND COALESCE(fecha_modificacion, fecha_creacion) < (NOW() - INTERVAL 6 MONTH)
       AND NOT EXISTS (
           SELECT 1 FROM detalle_ventas dv WHERE dv.id_producto = productos.id_producto
       );
